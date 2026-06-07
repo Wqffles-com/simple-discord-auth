@@ -1,7 +1,0 @@
-KeyPath = "./private_key.pem"
-Port = "8080"
-
-[Discord]
-ClientId = "1447662003807059988"
-ClientSecret = "dBqz5IbMOkK4j4G6FG9_ZyaMOAO5ANai"
-RedirectURL = "http://localhost:8080/callback"
