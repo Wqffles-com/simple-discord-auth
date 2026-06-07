@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -56,8 +58,27 @@ func NewOAuthHandler(config *Config) (*OAuthHandler, error) {
 }
 
 func (h *OAuthHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
-	url := h.OAuth.AuthCodeURL("state", oauth2.AccessTypeOffline)
+	redirect := r.URL.Query().Get("redirect_uri")
+	if redirect != "" && !h.isAllowed(redirect) {
+		http.Error(w, "Redirect URI not allowed", http.StatusForbidden)
+		return
+	}
+	url := h.OAuth.AuthCodeURL(redirect, oauth2.AccessTypeOffline)
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+}
+
+func (h *OAuthHandler) isAllowed(uri string) bool {
+	if len(h.Config.AllowedRedirects) == 0 {
+		return true
+	}
+	for _, allowed := range h.Config.AllowedRedirects {
+		// Exact match or prefix match with trailing slash
+		prefix := strings.TrimSuffix(allowed, "/") + "/"
+		if uri == allowed || strings.HasPrefix(uri, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *OAuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
@@ -94,6 +115,21 @@ func (h *OAuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	refreshToken, err := h.generateJWT(userID, 7*24*time.Hour)
 	if err != nil {
 		http.Error(w, "Failed to generate refresh token", http.StatusInternalServerError)
+		return
+	}
+
+	state := r.URL.Query().Get("state")
+	if state != "" {
+		u, err := url.Parse(state)
+		if err != nil {
+			http.Error(w, "Invalid state (redirect_uri)", http.StatusBadRequest)
+			return
+		}
+		q := u.Query()
+		q.Set("access_token", accessToken)
+		q.Set("refresh_token", refreshToken)
+		u.RawQuery = q.Encode()
+		http.Redirect(w, r, u.String(), http.StatusTemporaryRedirect)
 		return
 	}
 

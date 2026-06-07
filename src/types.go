@@ -1,9 +1,10 @@
 package main
 
 type Config struct {
-	KeyPath string
-	Port    string
-	Discord Discord
+	KeyPath          string
+	Port             string
+	Discord          Discord
+	AllowedRedirects []string
 }
 
 type Discord struct {
