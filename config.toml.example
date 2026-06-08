@@ -1,5 +1,6 @@
 KeyPath = "./private_key.pem"
 Port = "8080"
+Issuer = "simple-discord-auth"
 AllowedRedirects = ["http://localhost:3000"]
 
 [Discord]

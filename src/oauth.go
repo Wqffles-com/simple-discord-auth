@@ -63,7 +63,17 @@ func (h *OAuthHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Redirect URI not allowed", http.StatusForbidden)
 		return
 	}
-	url := h.OAuth.AuthCodeURL(redirect, oauth2.AccessTypeOffline)
+
+	audience := r.URL.Query().Get("audience")
+	v := url.Values{}
+	if redirect != "" {
+		v.Set("redirect_uri", redirect)
+	}
+	if audience != "" {
+		v.Set("audience", audience)
+	}
+
+	url := h.OAuth.AuthCodeURL(v.Encode(), oauth2.AccessTypeOffline)
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
@@ -106,23 +116,31 @@ func (h *OAuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessToken, err := h.generateJWT(userID, 15*time.Minute)
+	stateStr := r.URL.Query().Get("state")
+	var redirect, audience string
+	if stateStr != "" {
+		if values, err := url.ParseQuery(stateStr); err == nil {
+			redirect = values.Get("redirect_uri")
+			audience = values.Get("audience")
+		}
+	}
+
+	accessToken, err := h.generateJWT(userID, audience, 15*time.Minute)
 	if err != nil {
 		http.Error(w, "Failed to generate access token", http.StatusInternalServerError)
 		return
 	}
 
-	refreshToken, err := h.generateJWT(userID, 7*24*time.Hour)
+	refreshToken, err := h.generateJWT(userID, audience, 7*24*time.Hour)
 	if err != nil {
 		http.Error(w, "Failed to generate refresh token", http.StatusInternalServerError)
 		return
 	}
 
-	state := r.URL.Query().Get("state")
-	if state != "" {
-		u, err := url.Parse(state)
+	if redirect != "" {
+		u, err := url.Parse(redirect)
 		if err != nil {
-			http.Error(w, "Invalid state (redirect_uri)", http.StatusBadRequest)
+			http.Error(w, "Invalid redirect_uri", http.StatusBadRequest)
 			return
 		}
 		q := u.Query()
@@ -140,11 +158,15 @@ func (h *OAuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *OAuthHandler) generateJWT(userID string, duration time.Duration) (string, error) {
+func (h *OAuthHandler) generateJWT(userID string, audience string, duration time.Duration) (string, error) {
 	claims := jwt.RegisteredClaims{
 		Subject:   userID,
+		Issuer:    h.Config.Issuer,
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(duration)),
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
+	}
+	if audience != "" {
+		claims.Audience = jwt.ClaimStrings{audience}
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	return token.SignedString(h.PrivateKey)
@@ -174,7 +196,12 @@ func (h *OAuthHandler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newAccessToken, err := h.generateJWT(claims.Subject, 15*time.Minute)
+	var audience string
+	if len(claims.Audience) > 0 {
+		audience = claims.Audience[0]
+	}
+
+	newAccessToken, err := h.generateJWT(claims.Subject, audience, 15*time.Minute)
 	if err != nil {
 		http.Error(w, "Failed to generate access token", http.StatusInternalServerError)
 		return

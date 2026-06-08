@@ -12,13 +12,15 @@ Then you can use the `GET /login` endpoint to start a login.
 
 ### Redirecting back to your app
 
-If you want the user to be redirected back to your application after authentication, provide a `redirect_uri` parameter:
+If you want the user to be redirected back to your application after authentication, provide a `redirect_uri` parameter. You can also specify an `audience` for the JWT:
 
-`GET /login?redirect_uri=https://myapp.com/callback`
+`GET /login?redirect_uri=https://myapp.com/callback&audience=my-app`
 
 After a successful login, SDA will redirect the user to:
 
 `https://myapp.com/callback?access_token=...&refresh_token=...`
+
+The generated JWT will have the specified `audience` and the `issuer` defined in `config.toml`.
 
 You can whitelist allowed redirect URIs in `config.toml`:
 
